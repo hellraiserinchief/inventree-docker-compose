@@ -40,7 +40,7 @@ services:
       INVENTREE_SITE_URL: ${INVENTREE_SITE_URL}
       INVENTREE_ALLOWED_HOSTS: ${INVENTREE_ALLOWED_HOSTS}
       INVENTREE_CSRF_TRUSTED_ORIGINS: ${INVENTREE_CSRF_TRUSTED_ORIGINS}
-      INVENTREE_DEBUG: True
+      #INVENTREE_DEBUG: True
 
       # auto-create superuser
       #DJANGO_SUPERUSER_USERNAME: ${DJANGO_SUPERUSER_USERNAME}
@@ -71,6 +71,26 @@ services:
     command: ["invoke", "worker"]
     volumes:
       - ${INVENTREE_EXT_VOLUME}:/home/inventree/data
+
+
+  inventree-proxy:
+    image: caddy:2
+    container_name: inventree-proxy
+    restart: unless-stopped
+    depends_on:
+      inventree-server:
+        condition: service_started
+    ports:
+      - "8080:80"
+    environment:
+      CADDY_EXTERNAL_HOST: ${CADDY_EXTERNAL_HOST}
+      CADDY_INTERNAL_HOST: ${CADDY_INTERNAL_HOST}
+      INVENTREE_SERVER: ${INVENTREE_SERVER}
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ${INVENTREE_EXT_VOLUME}:/var/www              # gives Caddy access to static/ and media/
+      - caddy_data:/data
+      - caddy_config:/config
 
   inventree-db-backup:
     image: prodrigestivill/postgres-backup-local:16-alpine
@@ -104,3 +124,5 @@ services:
 
 volumes:
   pgdata:
+  caddy_data:
+  caddy_config:
