@@ -1,0 +1,106 @@
+
+services:
+  inventree-db:
+    image: postgres:15
+    container_name: inventree-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  inventree-cache:
+    image: redis:7-alpine
+    container_name: inventree-cache
+    restart: unless-stopped
+
+  inventree-server:
+    image: inventree/inventree:stable
+    container_name: inventree-server
+    restart: unless-stopped
+    depends_on:
+      inventree-db:
+        condition: service_healthy
+    environment:
+      INVENTREE_DB_ENGINE: postgresql
+      INVENTREE_DB_HOST: inventree-db
+      INVENTREE_DB_PORT: "5432"
+      INVENTREE_DB_NAME: ${POSTGRES_DB}
+      INVENTREE_DB_USER: ${POSTGRES_USER}
+      INVENTREE_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      INVENTREE_CACHE_HOST: inventree-cache
+      #INVENTREE_ALLOWED_HOSTS: "*"
+      INVENTREE_SITE_URL: ${INVENTREE_SITE_URL}
+      INVENTREE_ALLOWED_HOSTS: ${INVENTREE_ALLOWED_HOSTS}
+      INVENTREE_CSRF_TRUSTED_ORIGINS: ${INVENTREE_CSRF_TRUSTED_ORIGINS}
+      INVENTREE_DEBUG: True
+
+      # auto-create superuser
+      #DJANGO_SUPERUSER_USERNAME: ${DJANGO_SUPERUSER_USERNAME}
+      #DJANGO_SUPERUSER_EMAIL: ${DJANGO_SUPERUSER_EMAIL} 
+      #DJANGO_SUPERUSER_PASSWORD: ${DJANGO_SUPERUSER_PASSWORD}
+    volumes:
+      - ${INVENTREE_EXT_VOLUME}:/home/inventree/data
+    ports:
+      - "8000:8000"
+
+  inventree-worker:
+    image: inventree/inventree:stable
+    container_name: inventree-worker
+    restart: unless-stopped
+    depends_on:
+      inventree-db:
+        condition: service_healthy
+    environment:
+      INVENTREE_DB_ENGINE: postgresql
+      INVENTREE_DB_HOST: inventree-db
+      INVENTREE_DB_PORT: "5432"
+      INVENTREE_DB_NAME: ${POSTGRES_DB}
+      INVENTREE_DB_USER: ${POSTGRES_USER}
+      INVENTREE_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      INVENTREE_CACHE_HOST: inventree-cache
+      INVENTREE_ALLOWED_HOSTS: "*"
+      INVENTREE_SITE_URL: ${INVENTREE_SITE_URL}
+    command: ["invoke", "worker"]
+    volumes:
+      - ${INVENTREE_EXT_VOLUME}:/home/inventree/data
+
+  inventree-db-backup:
+    image: prodrigestivill/postgres-backup-local:16-alpine
+    container_name: inventree-db-backup
+    restart: unless-stopped
+    depends_on:
+      inventree-db:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: inventree-db
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      SCHEDULE: "0 3 * * *"
+      BACKUP_DIR: /backups
+      BACKUP_KEEP_DAYS: "7"
+      BACKUP_KEEP_WEEKS: "4"
+      BACKUP_KEEP_MONTHS: "3"
+      COMPRESSION: "bzip2"
+    volumes:
+      - ./backups:/backups
+
+  init-seed:
+    build: ./init-seed
+    container_name: inventree-init-seed
+    env_file:
+      - .env.seed
+    depends_on:
+      - inventree-server
+    restart: "no"
+
+volumes:
+  pgdata:
